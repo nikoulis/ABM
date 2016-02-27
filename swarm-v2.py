@@ -288,7 +288,7 @@ def updateAfter(agent, event):
         else:
             prevPrice = agent.revalPrices[-2][3]
             pl = prevPos * (lastPrice - prevPrice)
-        
+
         # Always append to P&L list at every tick
         agent.pls.append(pl)
         cumPl = sum(agent.pls)
@@ -401,10 +401,10 @@ def computeStats(trades):
                                  quantity=-newPos)
             tradeGroup.append(dummyTrade2)
             tradeGroups.append(tradeGroup)
-        
+
         oldPos = newPos
         i += 1
-        
+
     # Calculate trade stats
     numTradeGroups = len(tradeGroups)
     tradeStats = []
@@ -475,7 +475,7 @@ def getEvents(security):
 
 def getNextMarketUpdateEvent(security):
     socket.setsockopt(zmq.SUBSCRIBE, security)
-    
+
     try:
         string = socket.recv(zmq.NOBLOCK)
     except zmq.ZMQError as e:
@@ -501,19 +501,16 @@ def getNextMarketUpdateEvent(security):
 #-----------------------
 def runSwarm(aggregateAgents, tickBarAgents, securities, swarmFF, swarmType='ADD'):
     while len(eventQueue) > 0:
-        # First event is a MarketUpdate event; since there is only one agent
-        # (the TickBarGenerator), use this event to  generate TickBar and Comm events
+        # First event is a MarketUpdate event; use this event to  generate TickBar and Comm events
         event = eventQueue.pop()
         for tickBarAgent in tickBarAgents:
             consume(tickBarAgent, event)
         # The TickBar and Comm events are then consumed by the aggregateAgents
-        # (there is only one AggregateAgent, the swarmAgent)
         while len(eventQueue) > 0:
             event = eventQueue.pop()
             for aggregateAgent in aggregateAgents:
                 consume(aggregateAgent, event)
-        # Get next MarketUpdate event and add to queue, to be consumed by the
-        # TickBarGenerator in the next round
+        # Get next MarketUpdate event and add to queue (to be consumed by TickBarGenerator in the next round)
         for security in securities:
             event = getNextMarketUpdateEvent(security)
             if event != None:
@@ -543,7 +540,7 @@ def plot(tickBarsPlot, ma, trades, candle=False):
 
     # Plot moving average
     ax.plot(ma)
-    
+
     # Plot trades
     buys = []
     sells = []
@@ -562,7 +559,7 @@ def plot(tickBarsPlot, ma, trades, candle=False):
     plt.show()
 
 if __name__ == '__main__':
-    
+
     # Data transmitted from C:\NxCore\Examples\NxCoreLanguages\C++\SampleApp4
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
@@ -577,22 +574,20 @@ if __name__ == '__main__':
     # each swarmAgent contains agents for each MA scenario in Llist
     swarmAgents = []
 
-    print("Creating swarm of agents...")
-    # Create a moving average simple model swarm using 70-tick bars
-    Llist = [200] #np.arange(100, 401, 100)  # i.e. from 100 to 400 by 100
-    swarmAgent = AggregateAgent(name='SwarmAgent')
-    tickBarAgent = {}
+    # For each security, create a moving average simple model swarm agent using 70-tick bars
+    print("Creating set of swarm agents (one swarm agent per security)...")
+    Llist = range(100, 400, 100)
     for security in securities:
-        tickBarAgent[security] = TickBarGenerator(mkt=security, numEvents=70)
-        tickBarAgent[security].setFSM()
-        tickBarAgents.append(tickBarAgent[security])
+        tickBarAgent = TickBarGenerator(mkt=security, numEvents=70)
+        tickBarAgent.setFSM()
+        tickBarAgents.append(tickBarAgent)
+        swarmAgent = AggregateAgent(name='SwarmAgent')
         for L in Llist:
             agent = SimpleModelComm(L=L, mkt=security)
             agent.setFSM()
             swarmAgent.members.append(agent)
-            tickBarAgent[security].recipientsList.append(swarmAgent)
-
-    swarmAgents.append(swarmAgent)
+            tickBarAgent.recipientsList.append(swarmAgent)
+        swarmAgents.append(swarmAgent)
 
     OPTIMIZE = False
     if (OPTIMIZE):
@@ -613,12 +608,16 @@ if __name__ == '__main__':
         event = getNextMarketUpdateEvent(security)
         eventQueue.append(event)
     runSwarm(swarmAgents, tickBarAgents, securities, RTNAV, 'ADD')
-    pprint(swarmAgent.members[0].tradestats[-1].__dict__)
+    for swarmAgent in swarmAgents:
+        for j in range(len(Llist)):
+            pprint(swarmAgent.members[j].tradestats[-1].__dict__)
 
     print("Plotting...")
+    pdb.set_trace()
     i = 0
-    for security in securities:
-        plot(tickBarAgent[security].tickBarsPlot, swarmAgent.members[i].mas, swarmAgent.members[i].trades)
+    for tickBarAgent in tickBarAgents:
+        for j in range(len(Llist)):
+            plot(tickBarAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
         i += 1
 
     elapsed_time = time.time() - start_time
