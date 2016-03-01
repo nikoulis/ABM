@@ -2,15 +2,16 @@
 # A Finite State Machine defines a trading strategy
 #---------------------------------------------------
 class FSM(object):
-    def __init__(self, currentState='', transitions=None):
+    def __init__(self, currentState=None, transitions=None):
         self.currentState = currentState
         self.transitions = transitions if transitions != None else []
         
-#-----------------------------------------------------------------------
-# An agent holds trading strategy results (P&L, orders, positions etc.),
-# communicates with other agents via incoming and outgoing messages and
-# changes states according according to its FSM
-#-----------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------
+# An agent has the following functionality:
+# (a) defines a trading strategy, via its current state and its transitions (via the execute function)
+# (b) stores trading strategy results (P&L, orders, positions etc.)
+# (c) communicates with other agents via incoming and outgoing messages
+#----------------------------------------------------------------------------------------------------
 class Agent(object):
     def __init__(self,
                  name='',
@@ -29,6 +30,7 @@ class Agent(object):
                  outgoingMessages=None,
                  recipientsList=None,
                  fsm=None,
+                 currentState=None,
                  states=None):
         # util.initFromArgs does not initialize separate []'s when Agent.__init__ is called
         # from subclasses, so cannot use it here ...
@@ -48,7 +50,16 @@ class Agent(object):
         self.outgoingMessages = outgoingMessages if outgoingMessages != None else []
         self.recipientsList   = recipientsList   if recipientsList != None else []
         self.states           = states           if states != None else []
+        self.currentState     = currentState     if currentState != None else []
         self.fsm = FSM()
+
+    # Process currentState
+    def execute(self, event):
+        curentState.execute(self, event)
+
+    # Move to next state (called by currentState)
+    def changeState(self, newState):
+        currentState = newState
 
 #----------------------------------------------
 # An aggregate agent is a collection of agents

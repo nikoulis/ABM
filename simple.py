@@ -13,7 +13,6 @@ class SimpleModel(Agent):
         self.counter = counter
         self.mas = mas if mas != None else []
         self.fsm.currentState = 'INIT'
-        #self.states = ['INIT']
 
 #----------------------------------------------------------------------------------------
 # A simple moving average model, with its full functionality (transitions and actuators);
@@ -28,6 +27,9 @@ class SimpleModelComm(SimpleModel):
         self.mkt = mkt
         self.unblockLong = unblockLong
         self.unblockShort = unblockShort
+        self.initState = SimpleModelInitState()
+        self.longState = SimpleModelLongState()
+        self.shortState = SimpleModelShortState()
     
     # Transitions
     def setFSM(self):
@@ -132,9 +134,7 @@ class SimpleModelComm(SimpleModel):
     # Actuators; these would normally be part of the transitions array,
     # if only Python allowed multi-line lambdas
     def actuator(self, x, initialState, finalState):
-        print("%s %s -> %s" % (self.name,
-                               initialState,
-                               finalState))
+        print('%s %s -> %s' % (self.name, initialState, finalState))
         if initialState == 'INIT' and finalState == 'INIT':
             self.positions.append(0)
         elif initialState == 'INIT' and finalState == 'LONG':
@@ -157,3 +157,66 @@ class SimpleModelComm(SimpleModel):
             emit(self, 'LONG')
         elif initialState == 'SHORT' and finalState == 'SHORT':
             self.positions.append(self.unblockShort)
+
+#------------
+# INIT state
+#------------
+class SimpleModelInitState:
+    def execute(self, agent, event):
+        px = price(agent, event)
+        if (agent.counter <= agent.L or
+            (px[-1].value[3] < agent.mas[-1] and px[-2].value[3] < agent.mas[-2]) or
+            (px[-1].value[3] > agent.mas[-1] and px[-2].value[3] > agent.mas[-2])):
+            agent.positions.append(0)
+        elif (agent.counter > agent.L and
+              px[-1].value[3] >= agent.mas[-1] and
+              px[-2].value[3] < agent.mas[-2]):
+            agent.positions.append(agent.unblockLong)
+            emit(agent, 'LONG')
+            newState = agent.longState
+        elif (agent.counter > agent.L and
+              px[-1].value[3] <= agent.mas[-1] and
+              px[-2].value[3] > agent.mas[-2]):
+            agent.positions.append(agent.unblockShort)
+            emit(agent, 'SHORT')
+            newState = agent.shortState
+        print('%s %s -> %s' % (agent.name, agent.currentState, newState))
+        agent.changeState(newState)
+
+#------------
+# LONG state
+#------------
+class SimpleModelLongState:
+    def execute(self, agent):
+        px = price(agent, event)
+        if (agent.counter > agent.L and
+            px[-1].value[3] >= agent.mas[-1]):
+            agent.positions.append(agent.unblockLong)
+        elif (agent.counter > agent.L and
+              px[-1].value[3] <= agent.mas[-1]):
+            agent.positions.append(agent.unblockShort)
+            emit(agent, 'SHORT')
+            newState = agent.shortState
+        print('%s %s -> %s' % (agent.name, agent.currentState, newState))
+        agent.changeState(newState)
+
+#-------------
+# SHORT state
+#-------------
+class SimpleModelShortState:
+    def execute(self, agent, event):
+        px = price(agent, event)
+        if (agent.counter > agent.L and
+            px[-1].value[3] >= agent.mas[-1]):
+            agent.positions.append(agent.unblockLong)
+            emit(agent, 'LONG')
+            newState = agent.longState
+        elif (agent.counter > agent.L and
+              px[-1].value[3] <= agent.mas[-1]):
+            agent.positions.append(agent.unblockShort)
+        print('%s %s -> %s' % (agent.name, agent.currentState, newState))
+        agent.changeState(newState)
+
+#------------------------------------------------
+# Static states saved in each SimpleModel agent
+#------------------------------------------------

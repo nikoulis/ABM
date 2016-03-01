@@ -26,7 +26,6 @@ class TickBarGenerator(Agent):
         self.tickBars = tickBars if tickBars != None else []
         self.tickBarsPlot = tickBarsPlot if tickBarsPlot != None else []
         self.fsm.currentState = 'EMIT'
-        #self.states = ['EMIT']
         
     def setFSM(self):
         #self.fsm.currentState = self.states[-1]
@@ -85,7 +84,6 @@ class TickBarGenerator(Agent):
             self.buffer.append(x)
         elif initialState == 'EMIT' and finalState == 'EMIT':
                 pass
-#        print("%s %s -> %s" % (self.name,
-#                               initialState,
-#                               finalState))
-
+        #print("%s %s -> %s" % (self.name,
+        #                       initialState,
+        #                       finalState))
