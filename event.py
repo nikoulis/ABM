@@ -157,6 +157,5 @@ def emit(agent, emission):
         event = emission
     # Append event to the queue; this then gets popped by the main loop
     # (runSimulation or run Live) and consumed by the agents.
-    eventQueue.append(event)
+    eventQueue.insert(0, event)
     agent.outgoingMessages.append(event)
-

@@ -139,9 +139,8 @@ class Trade(object):
 #------------------
 def consume(agent, event):
     if observe(agent, event):
-        updateBefore(agent, event)
+        preprocess(agent, event)
         update(agent, event)
-        updateAfter(agent, event)
 
 #-----------------------------------
 # Determine if agent observes event
@@ -159,55 +158,27 @@ def observe(agent, event):
         # 3. SimpleModel agent, Comm event
         #-----------------------------------
         return (agent in event.recipients) and (agent != event.originator)
-    elif isinstance(agent, AggregateAgent):
-        return True
     else:
         return False
 
 #-------------------------------------
 # Update before main event processing
 #-------------------------------------
-def updateBefore(agent, event):
-    if isinstance(event, MarketUpdate):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
-        if agent.timestamps == []:
-            agent.pls.append(0)
-            agent.fitnesses.append(0)
-        agent.timestamps.append(event.timestamp)
-        agent.revalPrices.append(price(event))
-        oms(agent, event, 'ALL')
-        #print("updateBefore completed for agent %s and MktUpdate event %s" % (agent.name, event.timestamp))
-    if isinstance(event, list):
-        # 2. SimpleModel agent, TickBar event
-        #-------------------------------------
-        if agent.timestamps == []:
-            agent.pls.append(0)
-            agent.fitnesses.append(0)
-        agent.timestamps.append(event[-1].timestamp)
-        agent.revalPrices.append(price(event[-1]))
-        oms(agent, event[-1], 'ALL')
-        #print("updateBefore completed for agent %s and list event %s" % (agent.name, event[-1].timestamp))
-    elif isinstance(event, Comm):
-        # 3. SimpleModel agent, Comm event
-        #-----------------------------------
-        agent.incomingMessages.append(event)
-        print("updateBefore completed for agent %s and Comm event %s" % (agent.name, event))
-    preprocess(agent, event)
-
-#-----------------------------------------------------
-# Preprocessing (this is really part of updateBefore)
-#-----------------------------------------------------
 def preprocess(agent, event):
     if isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
         # 1. TickBarGenerator agent, MarketUpdate event
         #-----------------------------------------------
-        agent.positions.append(0)
+        agent.timestamps.append(event.timestamp)
+        agent.revalPrices.append(price(event))
+        #print("preprocess completed for agent %s and MktUpdate event %s" % (agent.name, event.timestamp))
         agent.counter = len(agent.buffer)
-    elif isinstance(agent, SimpleModel) and isinstance(event, list):
+    if isinstance(agent, SimpleModel) and isinstance(event, list):
         # 2. SimpleModel agent, TickBar event
         #-------------------------------------
-        # Calculate moving average
+        agent.timestamps.append(event[-1].timestamp)
+        agent.revalPrices.append(price(event[-1]))
+        oms(agent, event[-1], 'ALL')
+        #print("preprocess completed for agent %s and list event %s" % (agent.name, event[-1].timestamp))
         agent.counter = len(agent.revalPrices)
         startIndex = max(0, agent.counter - agent.L)
         sublist = agent.revalPrices[startIndex:agent.counter]
@@ -215,7 +186,9 @@ def preprocess(agent, event):
         agent.mas.append(sum(arr) / len(arr))
     elif isinstance(agent, SimpleModel) and isinstance(event, Comm):
         # 3. SimpleModel agent, Comm event
-        #----------------------------------
+        #-----------------------------------
+        agent.incomingMessages.append(event)
+        #print("preprocess completed for agent %s and Comm event %s" % (agent.name, event))
         if event.value == 'INIT':
             agent.unblockShort = 0
             agent.unblockLong = 0
@@ -230,109 +203,70 @@ def preprocess(agent, event):
 # Main processing
 #-----------------
 def update(agent, event):
-    if isinstance(agent, AggregateAgent):
-        allOrders = []
-        allPositions = []
-        for member in agent.members:
-            consume(member, event)
-            allOrders = zip(allOrders, member.orders)
-            allPositions = zip(allPositions, member.positions)
-        agent.orders = [flatten(i) for i in allOrders]
-        agent.positions = [sum(flatten(i)) for i in allPositions]
-    elif isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
+    if isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
         # 1. TickBarGenerator agent, MarketUpdate event
         #-----------------------------------------------
-        operateFSM(agent, event)
-        agent.states.append(agent.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
+        operateFSM(agent.fsm, event)
+        agent.states.append(agent.fsm.currentState)
+        #print("Completed work for %s and new state %s added" % (agent.name, agent.fsm.currentState))
     elif isinstance(agent, SimpleModel) and isinstance(event, list):
         # 2. SimpleModel agent, TickBar event
         #-------------------------------------
-        operateFSM(agent, event)
-        agent.states.append(agent.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
-    elif isinstance(agent, SimpleModel) and isinstance(event, Comm):
-        # 3. SimpleModel agent, Comm event
-        #----------------------------------
-        print("setFSM completed for agent %s" % agent.name)
-        print("Completed work for %s and comm event %s" % (agent.name, event))
+        operateFSM(agent.fsm, event)
+        agent.states.append(agent.fsm.currentState)
+        #print("Completed work for %s and new state %s added" % (agent.name, agent.fsm.currentState))
+        checkAndPlaceTrade(agent, event)
 
-#------------------------------------
-# Update after main event processing
-#------------------------------------
-def updateAfter(agent, event):
-    if isinstance(agent, AggregateAgent):
-        pass
-    elif isinstance(agent, TickBarGenerator):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
-        pass
-    elif isinstance(event, list):
-        pass
-        # 2. SimpleModel agent, TickBar event
-        #-------------------------------------
-        l = len(agent.timestamps)
-        lastPos = agent.positions[-1]
-        if l < 2:
-            prevPos = 0
-        else:
-            prevPos = agent.positions[-2]
+#-----------------------------------
+# Check if we need to place a trade
+#-----------------------------------
+def checkAndPlaceTrade(agent, event):
+    eventLength = len(event)
+    lastPos = agent.positions[-1]
+    if eventLength < 2:
+        prevPos = 0
+        quantity = 0
+    else:
+        prevPos = agent.positions[-2]
         quantity = lastPos - prevPos
-        if len(agent.revalPrices) == 0:
-            lastPrice = 0
-        else:
-            lastPrice = agent.revalPrices[-1][3]
-        if l < 2:
-            prevPrice = 0
-            pl = 0
-        else:
-            prevPrice = agent.revalPrices[-2][3]
-            pl = prevPos * (lastPrice - prevPrice)
+    if len(agent.revalPrices) == 0:
+        lastPrice = 0
+    else:
+        lastPrice = agent.revalPrices[-1][3]
+    if eventLength < 2:
+        prevPrice = 0
+        pl = 0
+    else:
+        prevPrice = agent.revalPrices[-2][3]
+        pl = prevPos * (lastPrice - prevPrice)
 
-        # Always append to P&L list at every tick
-        agent.pls.append(pl)
-        cumPl = sum(agent.pls)
-        agent.cumPls.append(cumPl)
+    # Always append to P&L list at every tick
+    agent.pls.append(pl)
+    cumPl = sum(agent.pls)
+    agent.cumPls.append(cumPl)
 
-        # Only append to trade P&L list if in fact there was a trade
-        # (i.e. prevPos != lastPos), not simply at every tick
-        if prevPos != lastPos:
-            agent.tradePls.append(pl)
-            cumTradePl = sum(agent.tradePls)
-            agent.cumTradePls.append(cumTradePl)
+    # Only append to trade P&L list if in fact there was a trade
+    # (i.e. prevPos != lastPos), not simply at every tick
+    if prevPos != lastPos:
+        agent.tradePls.append(pl)
+        cumTradePl = sum(agent.tradePls)
+        agent.cumTradePls.append(cumTradePl)
 
-        # Send a trade if position has changed
-        if quantity != 0:
-            sendOrder(agent, event[-1],
-                      orderPrice=price(event[-1].value[3]),
-                      orderQuantity=quantity,
-                      orderType='STP',
-                      orderId='POSCHG')
-            print("Generated aggressive order for agent %s for quantity %s" % (agent.name, quantity))
-        #print("updateAfter completed for agent %s and MktUpdate event %s" % (agent.name, event.timestamp))
-    elif isinstance(event, Comm):
-        # 3. SimpleModel agent, Comm event
-        #----------------------------------
-        print("updateAfter completed for agent %s and Comm event %s" % (agent.name, event))
-    postprocess(agent, event)
-
-#-----------------------------------------------------
-# Postprocessing (this is really part of updateAfter)
-#-----------------------------------------------------
-def postprocess(agent, event):
-    if isinstance(agent, TickBarGenerator):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
-        pass
-    elif isinstance(agent, SimpleModel):
-        # 2. SimpleModel agent, TickBar event
-        #-------------------------------------
+    # Send a trade if position has changed
+    if quantity != 0:
+        sendOrder(agent, event[-1],
+                  orderPrice=price(event[-1].value[3]),
+                  orderQuantity=quantity,
+                  orderType='STP',
+                  orderId='POSCHG')
+        print("Generated aggressive order for agent %s for quantity %s" % (agent.name, quantity))
         print("SimpleModel Event %s %s consumed for agent %s" % (event[-1].timestamp, price(event)[-1].value, agent.name))
-        if len(agent.cumTradePls) > 0:
-            cumtradepl = agent.cumTradePls[-1]
-        else:
-            cumtradepl = 0
-        print("SimpleModel Output: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" % (agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
+    if len(agent.cumTradePls) > 0:
+        cumtradepl = agent.cumTradePls[-1]
+    else:
+        cumtradepl = 0
+    print("SimpleModel Output: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" %
+          (agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
 
 #------------------------------------
 # Rolling trade NAV fitness function
@@ -411,10 +345,12 @@ def computeStats(trades):
     for tradeGroup in tradeGroups:
         buyTrades = [trade for trade in tradeGroup if trade.quantity > 0]
         sellTrades = [trade for trade in tradeGroup if trade.quantity < 0]
-        avgBuyPrice = sum([trade.price[3] for trade in buyTrades]) / len(buyTrades)
-        avgSellPrice = sum([trade.price[3] for trade in sellTrades]) / len(sellTrades)
-        avgBuyTime = sum([ts2sec(trade.timestamp) for trade in buyTrades]) / len(buyTrades)
-        avgSellTime = sum([ts2sec(trade.timestamp) for trade in sellTrades]) / len(sellTrades)
+        numBuyTrades = len(buyTrades) if len(buyTrades) > 0 else 1
+        numSellTrades = len(sellTrades) if len(sellTrades) > 0 else 1
+        avgBuyPrice = sum([trade.price[3] for trade in buyTrades]) / numBuyTrades
+        avgSellPrice = sum([trade.price[3] for trade in sellTrades]) / numSellTrades
+        avgBuyTime = sum([ts2sec(trade.timestamp) for trade in buyTrades]) / numBuyTrades
+        avgSellTime = sum([ts2sec(trade.timestamp) for trade in sellTrades]) / numSellTrades
         tradeLength = abs(avgBuyTime - avgSellTime)
         if avgBuyPrice == 0:
             tradeLogRet = 1
@@ -452,10 +388,12 @@ def perform(transition, event):
 
 def operateFSM(fsm, event):
     applicableTransitions = [tr for tr in fsm.transitions if tr.initialState == fsm.currentState]
-    effectedTransition = [tr for tr in applicableTransitions if perform(tr, event)][0]
-    effectedTransition.actuator(effectedTransition.sensor(event))
-    fsm.currentState = effectedTransition.finalState
-    #print("Transition: %s -> %s"% (effectedTransition.initialState, effectedTransition.finalState))
+    effectedTransitions = [tr for tr in applicableTransitions if perform(tr, event)]
+    if len(effectedTransitions) > 0:
+        effectedTransition = effectedTransitions[0]
+        effectedTransition.actuator(effectedTransition.sensor(event))
+        fsm.currentState = effectedTransition.finalState
+        #print("Transition: %s -> %s"% (effectedTransition.initialState, effectedTransition.finalState))
 
 def runSimulation():
     while len(eventQueue) > 0:
@@ -470,12 +408,11 @@ def getEvents(security):
         timestamp = date
         value = float(data[date]['Adj Close'])
         event = MarketUpdate(security, timestamp, value)
-        events.append(event)
+        events.insert(0, event)
     return events
 
 def getNextMarketUpdateEvent(security):
     socket.setsockopt(zmq.SUBSCRIBE, security)
-
     try:
         string = socket.recv(zmq.NOBLOCK)
     except zmq.ZMQError as e:
@@ -485,7 +422,6 @@ def getNextMarketUpdateEvent(security):
             string = socket.recv(zmq.NOBLOCK)
         except zmq.ZMQError as e:
             return None
-
     data = string.split()
     symbol = data[0]
     timestamp = data[1]
@@ -496,25 +432,47 @@ def getNextMarketUpdateEvent(security):
     event = MarketUpdate(symbol, timestamp, tradePrice)
     return event
 
+#---------------------
+# Display event queue
+#---------------------
+def displayQueue(eventQueue):
+    print('Queue (' + str(len(eventQueue)) + '): ', end='')
+    for event in eventQueue:
+        if isinstance(event, MarketUpdate):
+            print('M', end='')
+        elif isinstance(event, list) or isinstance(event, float):
+            print(event, end='')
+        elif isinstance(event, Comm):
+            print('C', end='')
+        elif isinstance(event, Prc):
+            pint('P', end='')
+        elif isinstance(event, Bar) or isinstance(event, TickBar):
+            print(event.open, end='')
+        elif isinstance(event, Book):
+            print('B', end='')
+    print()
+    
 #-----------------------
 # Run a swarm of agents
 #-----------------------
 def runSwarm(aggregateAgents, tickBarAgents, securities, swarmFF, swarmType='ADD'):
     while len(eventQueue) > 0:
-        # First event is a MarketUpdate event; use this event to  generate TickBar and Comm events
-        event = eventQueue.pop()
-        for tickBarAgent in tickBarAgents:
-            consume(tickBarAgent, event)
-        # The TickBar and Comm events are then consumed by the aggregateAgents
+        # Consume current market update events
         while len(eventQueue) > 0:
             event = eventQueue.pop()
+            # TickBar agents consume MarketUpdate events and produce TickBar and Comm events
+            for tickBarAgent in tickBarAgents:
+                consume(tickBarAgent, event)
+            # Aggregate agents consume TickBar and Comm events
             for aggregateAgent in aggregateAgents:
-                consume(aggregateAgent, event)
-        # Get next MarketUpdate event and add to queue (to be consumed by TickBarGenerator in the next round)
+                for agent in aggregateAgent.members:
+                    consume(agent, event)
+
+        # Get more market update events
         for security in securities:
             event = getNextMarketUpdateEvent(security)
             if event != None:
-                eventQueue.append(event)
+                eventQueue.insert(0, event)
 
 #----------------------------------------------------
 # Plot the generated tickBars, the ma and the trades
@@ -575,7 +533,7 @@ if __name__ == '__main__':
     swarmAgents = []
 
     # For each security, create a moving average simple model swarm agent using 70-tick bars
-    print("Creating set of swarm agents (one swarm agent per security)...")
+    print("Creating set of swarm agents (one swarm agent per security) ...")
     Llist = range(100, 400, 100)
     for security in securities:
         tickBarAgent = TickBarGenerator(mkt=security, numEvents=70)
@@ -586,7 +544,7 @@ if __name__ == '__main__':
             agent = SimpleModelComm(L=L, mkt=security)
             agent.setFSM()
             swarmAgent.members.append(agent)
-            tickBarAgent.recipientsList.append(swarmAgent)
+            tickBarAgent.recipientsList.append(agent)
         swarmAgents.append(swarmAgent)
 
     OPTIMIZE = False
@@ -603,10 +561,11 @@ if __name__ == '__main__':
     start_time = time.time()
 
     print("Running...")
-    # Grab the first price of each security (to kickstart the event loop)
+    # Get first MarketUpdate events and add them to event queue (to kickstart the event loop)
     for security in securities:
         event = getNextMarketUpdateEvent(security)
-        eventQueue.append(event)
+        if event != None:
+            eventQueue.insert(0, event)
     runSwarm(swarmAgents, tickBarAgents, securities, RTNAV, 'ADD')
     for swarmAgent in swarmAgents:
         for j in range(len(Llist)):
@@ -614,11 +573,9 @@ if __name__ == '__main__':
 
     print("Plotting...")
     pdb.set_trace()
-    i = 0
-    for tickBarAgent in tickBarAgents:
+    for i, tickBarAgent in enumerate(tickBarAgents):
         for j in range(len(Llist)):
             plot(tickBarAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
-        i += 1
 
     elapsed_time = time.time() - start_time
     print("Elapsed time = %.1f sec." % elapsed_time)

@@ -2,12 +2,8 @@ from agent import *
 from event import *
 import pdb
 
-class TickBarGenerator(FSMAgent):
+class TickBarGenerator(Agent):
     def __init__(self,
-                 name='',
-                 currentState='',
-                 transitions=None,
-                 states=None,
                  mkt='',
                  numEvents=70,
                  counter=0,
@@ -18,9 +14,9 @@ class TickBarGenerator(FSMAgent):
                  close=None,
                  tickBars=None,
                  tickBarsPlot=None):
-        FSMAgent.__init__(self, name, currentState, transitions, states)
         self.mkt = mkt
         self.numEvents = numEvents
+        Agent.__init__(self, name='TICKBARGENERATOR_' + mkt + '_' + str(self.numEvents))
         self.counter = counter
         self.buffer = buffer if buffer != None else []
         self.open = open
@@ -29,40 +25,39 @@ class TickBarGenerator(FSMAgent):
         self.close = close
         self.tickBars = tickBars if tickBars != None else []
         self.tickBarsPlot = tickBarsPlot if tickBarsPlot != None else []
-        if len(self.states) == 0:
-            self.states.append('EMIT')
-            self.name = 'TICKBARGENERATOR_' + str(self.numEvents)
-
+        self.fsm.currentState = 'EMIT'
+        #self.states = ['EMIT']
+        
     def setFSM(self):
-        self.currentState = self.states[-1]
-        self.transitions = [Transition(initialState='CALC',
-                                       finalState='CALC',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.counter < self.numEvents),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'CALC', 'CALC'))),
-                            Transition(initialState='CALC',
-                                       finalState='EMIT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.counter == self.numEvents),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'CALC', 'EMIT'))),
-                            Transition(initialState='EMIT',
-                                       finalState='CALC',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  True),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'EMIT', 'CALC'))),
-                            Transition(initialState='EMIT',
-                                       finalState='EMIT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  False),
-                                       actuator=(lambda x:
-                                                 False))]
+        #self.fsm.currentState = self.states[-1]
+        self.fsm.transitions = [Transition(initialState='CALC',
+                                           finalState='CALC',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.counter < self.numEvents),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'CALC', 'CALC'))),
+                                Transition(initialState='CALC',
+                                           finalState='EMIT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.counter == self.numEvents),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'CALC', 'EMIT'))),
+                                Transition(initialState='EMIT',
+                                           finalState='CALC',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      True),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'EMIT', 'CALC'))),
+                                Transition(initialState='EMIT',
+                                           finalState='EMIT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      False),
+                                           actuator=(lambda x:
+                                                     False))]
 
     def actuator(self, x, initialState, finalState):
         if initialState == 'CALC' and finalState == 'CALC':

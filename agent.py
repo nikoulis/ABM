@@ -1,12 +1,19 @@
-import util
-
+#---------------------------------------------------
+# A Finite State Machine defines a trading strategy
+#---------------------------------------------------
+class FSM(object):
+    def __init__(self, currentState='', transitions=None):
+        self.currentState = currentState
+        self.transitions = transitions if transitions != None else []
+        
 #-----------------------------------------------------------------------
-# An agent holds trading strategy results (P&L, orders, positions etc.)
-# and communicates with other agents via incoming and outgoing messages
+# An agent holds trading strategy results (P&L, orders, positions etc.),
+# communicates with other agents via incoming and outgoing messages and
+# changes states according according to its FSM
 #-----------------------------------------------------------------------
 class Agent(object):
     def __init__(self,
-                 name,
+                 name='',
                  timestamps=None,
                  revalPrices=None,
                  orders=None,
@@ -20,7 +27,11 @@ class Agent(object):
                  tradestats=None,
                  incomingMessages=None,
                  outgoingMessages=None,
-                 recipientsList=None):
+                 recipientsList=None,
+                 fsm=None,
+                 states=None):
+        # util.initFromArgs does not initialize separate []'s when Agent.__init__ is called
+        # from subclasses, so cannot use it here ...
         self.name             = name             if name != None else []
         self.timestamps       = timestamps       if timestamps != None else []
         self.revalPrices      = revalPrices      if revalPrices != None else []
@@ -36,33 +47,15 @@ class Agent(object):
         self.incomingMessages = incomingMessages if incomingMessages != None else []
         self.outgoingMessages = outgoingMessages if outgoingMessages != None else []
         self.recipientsList   = recipientsList   if recipientsList != None else []
-
-#----------------------------------------------------------
-# An FSM (Finite State Machine) defines a trading strategy
-#----------------------------------------------------------
-class FSM(object):
-    def __init__(self, currentState='', transitions=None):
-        self.currentState = currentState
-        self.transitions = transitions if transitions != None else []
-
-#--------------------------------------------------------------------------------------
-# An FSMAgent is a trading strategy along with its performance statistics and messages
-#--------------------------------------------------------------------------------------
-class FSMAgent(FSM, Agent):
-    def __init__(self,
-                 name,
-                 currentState='',
-                 transitions=None,
-                 states=None):
-        FSM.__init__(self, currentState, transitions)
-        Agent.__init__(self, name='')
-        self.states = states if states != None else []
+        self.states           = states           if states != None else []
+        self.fsm = FSM()
 
 #----------------------------------------------
 # An aggregate agent is a collection of agents
 #----------------------------------------------
-class AggregateAgent(Agent):
-    def __init__(self, name, members=None):
-        Agent.__init__(self, name)
+class AggregateAgent(object):
+    def __init__(self,
+                 name='',
+                 members=None):
+        self.name = name
         self.members = members if members != None else []
-

@@ -6,14 +6,14 @@ from event import *
 # A simple moving average model; this is simply a shell,
 # most of the fuctionality is in SimpleModelComm below
 #--------------------------------------------------------
-class SimpleModel(FSMAgent):
+class SimpleModel(Agent):
     def __init__(self, L, counter=0, mas=None):
-        FSMAgent.__init__(self, name='')
+        Agent.__init__(self, name='SIMPLE_MODEL_' + str(L))
         self.L = L
         self.counter = counter
         self.mas = mas if mas != None else []
-        self.states = ['INIT']
-        self.name = 'SIMPLE_MODEL_' + str(self.L)
+        self.fsm.currentState = 'INIT'
+        #self.states = ['INIT']
 
 #----------------------------------------------------------------------------------------
 # A simple moving average model, with its full functionality (transitions and actuators);
@@ -28,75 +28,73 @@ class SimpleModelComm(SimpleModel):
         self.mkt = mkt
         self.unblockLong = unblockLong
         self.unblockShort = unblockShort
-        if len(self.states) == 0:
-            emit(self, 'INIT')
     
     # Transitions
     def setFSM(self):
-        self.currentState = self.states[-1]
-        self.transitions = [Transition(initialState='INIT',
-                                       finalState='INIT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'INIT', 'INIT')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'INIT', 'INIT'))),
-                            Transition(initialState='INIT',
-                                       finalState='LONG',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'INIT', 'LONG')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'INIT', 'LONG'))),
-                            Transition(initialState='INIT',
-                                       finalState='SHORT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'INIT', 'SHORT')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'INIT', 'SHORT'))),
-                            Transition(initialState='LONG',
-                                       finalState='INIT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'LONG', 'INIT')),
-                                       actuator=(lambda x:
-                                                 False)),
-                            Transition(initialState='LONG',
-                                       finalState='LONG',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'LONG', 'LONG')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'LONG', 'LONG'))),
-                            Transition(initialState='LONG',
-                                       finalState='SHORT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'LONG', 'SHORT')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'LONG', 'SHORT'))),
-                            Transition(initialState='SHORT',
-                                       finalState='INIT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'SHORT', 'INIT')),
-                                       actuator=(lambda x:
-                                                 False)),
-                            Transition(initialState='SHORT',
-                                       finalState='LONG',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'SHORT', 'LONG')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'SHORT', 'LONG'))),
-                            Transition(initialState='SHORT',
-                                       finalState='SHORT',
-                                       sensor=price,
-                                       predicate=(lambda x:
-                                                  self.predicate(x, 'SHORT', 'SHORT')),
-                                       actuator=(lambda x:
-                                                 self.actuator(x, 'SHORT', 'SHORT')))]
+        #self.fsm.currentState = self.states[-1]
+        self.fsm.transitions = [Transition(initialState='INIT',
+                                           finalState='INIT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'INIT', 'INIT')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'INIT', 'INIT'))),
+                                Transition(initialState='INIT',
+                                           finalState='LONG',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'INIT', 'LONG')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'INIT', 'LONG'))),
+                                Transition(initialState='INIT',
+                                           finalState='SHORT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'INIT', 'SHORT')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'INIT', 'SHORT'))),
+                                Transition(initialState='LONG',
+                                           finalState='INIT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'LONG', 'INIT')),
+                                           actuator=(lambda x:
+                                                     False)),
+                                Transition(initialState='LONG',
+                                           finalState='LONG',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'LONG', 'LONG')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'LONG', 'LONG'))),
+                                Transition(initialState='LONG',
+                                           finalState='SHORT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'LONG', 'SHORT')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'LONG', 'SHORT'))),
+                                Transition(initialState='SHORT',
+                                           finalState='INIT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'SHORT', 'INIT')),
+                                           actuator=(lambda x:
+                                                     False)),
+                                Transition(initialState='SHORT',
+                                           finalState='LONG',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'SHORT', 'LONG')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'SHORT', 'LONG'))),
+                                Transition(initialState='SHORT',
+                                           finalState='SHORT',
+                                           sensor=price,
+                                           predicate=(lambda x:
+                                                      self.predicate(x, 'SHORT', 'SHORT')),
+                                           actuator=(lambda x:
+                                                     self.actuator(x, 'SHORT', 'SHORT')))]
 
     def predicate(self, x, initialState, finalState):
         if initialState == 'INIT':
