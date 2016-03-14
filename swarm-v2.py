@@ -146,17 +146,17 @@ def consume(agent, event):
 # Determine if agent observes event
 #-----------------------------------
 def observe(agent, event):
-    if isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
+    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
+        # 1. TickBarAgent agent, MarketUpdate event
+        #-------------------------------------------
         return (agent.mkt == event.security) and (not isinstance(event, Bar))
-    elif isinstance(agent, SimpleModel) and isinstance(event, list):
-        # 2. SimpleModel agent, TickBar event
+    elif isinstance(agent, SimpleModelAgent) and isinstance(event, list):
+        # 2. SimpleModelAgent agent, TickBar event
         #-------------------------------------
         return (agent.mkt == event[-1].security)
-    elif isinstance(agent, SimpleModel) and isinstance(event, Comm):
-        # 3. SimpleModel agent, Comm event
-        #-----------------------------------
+    elif isinstance(agent, SimpleModelAgent) and isinstance(event, Comm):
+        # 3. SimpleModelAgent agent, Comm event
+        #----------------------------------
         return (agent in event.recipients) and (agent != event.originator)
     else:
         return False
@@ -165,15 +165,15 @@ def observe(agent, event):
 # Update before main event processing
 #-------------------------------------
 def preprocess(agent, event):
-    if isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
+    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
+        # 1. TickBarAgent agent, MarketUpdate event
+        #-------------------------------------------
         agent.timestamps.append(event.timestamp)
         agent.revalPrices.append(price(event))
         #print("preprocess completed for agent %s and MktUpdate event %s" % (agent.name, event.timestamp))
         agent.counter = len(agent.buffer)
-    if isinstance(agent, SimpleModel) and isinstance(event, list):
-        # 2. SimpleModel agent, TickBar event
+    if isinstance(agent, SimpleModelAgent) and isinstance(event, list):
+        # 2. SimpleModelAgent agent, TickBar event
         #-------------------------------------
         agent.timestamps.append(event[-1].timestamp)
         agent.revalPrices.append(price(event[-1]))
@@ -184,8 +184,8 @@ def preprocess(agent, event):
         sublist = agent.revalPrices[startIndex:agent.counter]
         arr = np.array(sublist)[:,3]
         agent.mas.append(sum(arr) / len(arr))
-    elif isinstance(agent, SimpleModel) and isinstance(event, Comm):
-        # 3. SimpleModel agent, Comm event
+    elif isinstance(agent, SimpleModelAgent) and isinstance(event, Comm):
+        # 3. SimpleModelAgent agent, Comm event
         #-----------------------------------
         agent.incomingMessages.append(event)
         #print("preprocess completed for agent %s and Comm event %s" % (agent.name, event))
@@ -203,18 +203,22 @@ def preprocess(agent, event):
 # Main processing
 #-----------------
 def update(agent, event):
-    if isinstance(agent, TickBarGenerator) and isinstance(event, MarketUpdate):
-        # 1. TickBarGenerator agent, MarketUpdate event
-        #-----------------------------------------------
-        operateFSM(agent.fsm, event)
-        agent.states.append(agent.fsm.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.fsm.currentState))
-    elif isinstance(agent, SimpleModel) and isinstance(event, list):
-        # 2. SimpleModel agent, TickBar event
+    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
+        # 1. TickBarAgent agent, MarketUpdate event
+        #-------------------------------------------
+        #operateFSM(agent.fsm, event)
+        #agent.states.append(agent.fsm.currentState)
+        agent.execute(event)
+        agent.states.append(agent.currentState)
+        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
+    elif isinstance(agent, SimpleModelAgent) and isinstance(event, list):
+        # 2. SimpleModelAgent agent, TickBar event
         #-------------------------------------
-        operateFSM(agent.fsm, event)
-        agent.states.append(agent.fsm.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.fsm.currentState))
+        #operateFSM(agent.fsm, event)
+        #agent.states.append(agent.fsm.currentState)
+        agent.execute(event)
+        agent.states.append(agent.currentState)
+        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
         checkAndPlaceTrade(agent, event)
 
 #-----------------------------------
@@ -260,13 +264,13 @@ def checkAndPlaceTrade(agent, event):
                   orderType='STP',
                   orderId='POSCHG')
         print("Generated aggressive order for agent %s for quantity %s" % (agent.name, quantity))
-        print("SimpleModel Event %s %s consumed for agent %s" % (event[-1].timestamp, price(event)[-1].value, agent.name))
+        print("SimpleModelAgent Event %s %s consumed for agent %s" % (event[-1].timestamp, price(event)[-1].value, agent.name))
     if len(agent.cumTradePls) > 0:
         cumtradepl = agent.cumTradePls[-1]
     else:
         cumtradepl = 0
-    print("SimpleModel Output: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" %
-          (agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
+    print("%s: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" %
+          (agent.name, agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
 
 #------------------------------------
 # Rolling trade NAV fitness function
@@ -428,7 +432,7 @@ def getNextMarketUpdateEvent(security):
     tradePrice = float(data[2])
     tradeNetChange = float(data[3])
     tradeSize = float(data[4])
-#    print("%s %s %f %f %d" %(symbol, timestamp, tradePrice, tradeNetChange, tradeSize))
+    #print("%s %s %f %f %d" %(symbol, timestamp, tradePrice, tradeNetChange, tradeSize))
     event = MarketUpdate(symbol, timestamp, tradePrice)
     return event
 
@@ -536,13 +540,13 @@ if __name__ == '__main__':
     print("Creating set of swarm agents (one swarm agent per security) ...")
     Llist = range(100, 400, 100)
     for security in securities:
-        tickBarAgent = TickBarGenerator(mkt=security, numEvents=70)
-        tickBarAgent.setFSM()
+        tickBarAgent = TickBarAgent(mkt=security, numEvents=70)
+        #tickBarAgent.setFSM()
         tickBarAgents.append(tickBarAgent)
         swarmAgent = AggregateAgent(name='SwarmAgent')
         for L in Llist:
-            agent = SimpleModelComm(L=L, mkt=security)
-            agent.setFSM()
+            agent = SimpleModelAgentComm(L=L, mkt=security)
+            #agent.setFSM()
             swarmAgent.members.append(agent)
             tickBarAgent.recipientsList.append(agent)
         swarmAgents.append(swarmAgent)
@@ -551,7 +555,7 @@ if __name__ == '__main__':
     if (OPTIMIZE):
         agents = []
         for i in range(10, 111):
-            agent = SimpleModel(L=10, mkt=securities[0])
+            agent = SimpleModelAgentComm(L=10, mkt=securities[0])
             agents.append(agent)
         runSimulation(agents, eventQueue)
         results = []
@@ -569,13 +573,15 @@ if __name__ == '__main__':
     runSwarm(swarmAgents, tickBarAgents, securities, RTNAV, 'ADD')
     for swarmAgent in swarmAgents:
         for j in range(len(Llist)):
-            pprint(swarmAgent.members[j].tradestats[-1].__dict__)
+            if len(swarmAgent.members[j].tradestats) > 0:
+                pprint(swarmAgent.members[j].tradestats[-1].__dict__)
 
     print("Plotting...")
     pdb.set_trace()
     for i, tickBarAgent in enumerate(tickBarAgents):
         for j in range(len(Llist)):
-            plot(tickBarAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
+            if swarmAgents[i].members[j] is not None:
+                plot(tickBarAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
 
     elapsed_time = time.time() - start_time
     print("Elapsed time = %.1f sec." % elapsed_time)

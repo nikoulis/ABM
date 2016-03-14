@@ -123,23 +123,23 @@ class Transition(object):
 def price(event, slippageFunction=None, size=0, orderType=None):
     #print("----> type(event)=%s %s" % (type(event), event.value))
     if isinstance(event, MarketUpdate):
-        price = event.value
+        px = event.value
     elif isinstance(event, list) or isinstance(event, float):
-        price = event
+        px = event
     elif isinstance(event, Comm):
-        price = 0
+        px = 0
     elif isinstance(event, Prc):
-        price = event.lastPrice
+        px = event.lastPrice
     elif isinstance(event, Bar) or isinstance(event, TickBar):
-        price = event.open
+        px = event.open
     elif isinstance(event, Book):
         if size == 0:
-            price = event.mid
+            px = event.mid
         elif size > 0:
-            price = event.askBest
+            px = event.askBest
         else:
-            price = event.bidBest
-    return adjustPrice(price, slippageFunction, event, size, orderType)
+            px = event.bidBest
+    return adjustPrice(px, slippageFunction, event, size, orderType)
 
 def slippage(event, size, orderType):
     return 0

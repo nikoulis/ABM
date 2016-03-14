@@ -2,21 +2,21 @@ from agent import *
 from event import *
 import pdb
 
-class TickBarGenerator(Agent):
+class TickBarAgent(Agent):
     def __init__(self,
                  mkt='',
                  numEvents=70,
                  counter=0,
                  buffer=None,
-                 open=None,
-                 high=None,
-                 low=None,
-                 close=None,
+                 open=0,
+                 high=0,
+                 low=99999,
+                 close=0,
                  tickBars=None,
                  tickBarsPlot=None):
         self.mkt = mkt
         self.numEvents = numEvents
-        Agent.__init__(self, name='TICKBARGENERATOR_' + mkt + '_' + str(self.numEvents))
+        Agent.__init__(self, name='TICKBARAGENT_' + mkt + '_' + str(self.numEvents))
         self.counter = counter
         self.buffer = buffer if buffer != None else []
         self.open = open
@@ -25,65 +25,54 @@ class TickBarGenerator(Agent):
         self.close = close
         self.tickBars = tickBars if tickBars != None else []
         self.tickBarsPlot = tickBarsPlot if tickBarsPlot != None else []
-        self.fsm.currentState = 'EMIT'
-        
-    def setFSM(self):
-        #self.fsm.currentState = self.states[-1]
-        self.fsm.transitions = [Transition(initialState='CALC',
-                                           finalState='CALC',
-                                           sensor=price,
-                                           predicate=(lambda x:
-                                                      self.counter < self.numEvents),
-                                           actuator=(lambda x:
-                                                     self.actuator(x, 'CALC', 'CALC'))),
-                                Transition(initialState='CALC',
-                                           finalState='EMIT',
-                                           sensor=price,
-                                           predicate=(lambda x:
-                                                      self.counter == self.numEvents),
-                                           actuator=(lambda x:
-                                                     self.actuator(x, 'CALC', 'EMIT'))),
-                                Transition(initialState='EMIT',
-                                           finalState='CALC',
-                                           sensor=price,
-                                           predicate=(lambda x:
-                                                      True),
-                                           actuator=(lambda x:
-                                                     self.actuator(x, 'EMIT', 'CALC'))),
-                                Transition(initialState='EMIT',
-                                           finalState='EMIT',
-                                           sensor=price,
-                                           predicate=(lambda x:
-                                                      False),
-                                           actuator=(lambda x:
-                                                     False))]
 
-    def actuator(self, x, initialState, finalState):
-        if initialState == 'CALC' and finalState == 'CALC':
-            self.close = x
-            self.high = max(self.high, x)
-            self.low = min(self.low, x)
-            self.buffer.append(x)
-        elif initialState == 'CALC' and finalState == 'EMIT':
-            tickBar = TickBar(security=self.mkt,
-                              timestamp=self.timestamps[-1],
-                              value=[self.open, self.high, self.low, self.close],
-                              numTicks=self.numEvents)
+        # Static states
+        #---------------
+        self.calcState = TickBarAgentCalcState()
+        self.emitState = TickBarAgentEmitState()
+        self.currentState = self.emitState
+
+#------------
+# CALC state
+#------------
+class TickBarAgentCalcState:
+    def execute(self, agent, event):
+        price = event.value
+        if agent.counter < agent.numEvents:
+            agent.close = price
+            agent.high = max(agent.high, price)
+            agent.low = min(agent.low, price)
+            agent.buffer.append(price)
+            newState = agent.currentState
+        elif agent.counter == agent.numEvents:
+            tickBar = TickBar(security=agent.mkt,
+                              timestamp=agent.timestamps[-1],
+                              value=[agent.open, agent.high, agent.low, agent.close],
+                              numTicks=agent.numEvents)
             print("============> TickBar: Open=%0.4f High=%0.4f Low=%0.4f Close=%0.4f"
-                  % (self.open, self.high, self.low, self.close))
-            self.tickBars.append(tickBar)
-            timestampFloat = float(self.timestamps[-1][0:2]) * 10000 + float(self.timestamps[-1][3:5]) * 100 + float(self.timestamps[-1][6:8])
-            self.tickBarsPlot.append([timestampFloat, self.open, self.high, self.low, self.close])
-            emit(self, self.tickBars)
-            self.buffer = []
-        elif initialState == 'EMIT' and finalState == 'CALC':
-            self.open = x
-            self.high = x
-            self.low = x
-            self.close = x
-            self.buffer.append(x)
-        elif initialState == 'EMIT' and finalState == 'EMIT':
-                pass
-        #print("%s %s -> %s" % (self.name,
-        #                       initialState,
-        #                       finalState))
+                  % (agent.open, agent.high, agent.low, agent.close))
+            agent.tickBars.append(tickBar)
+            timestampFloat = (float(agent.timestamps[-1][0:2]) * 10000 +
+                              float(agent.timestamps[-1][3:5]) * 100 +
+                              float(agent.timestamps[-1][6:8]))
+            agent.tickBarsPlot.append([timestampFloat, agent.open, agent.high, agent.low, agent.close])
+            emit(agent, agent.tickBars)
+            agent.buffer = []
+            newState = agent.emitState
+        #print('%s %s -> %s' % (agent.name, agent.currentState, newState))
+        agent.changeState(newState)
+
+#------------
+# EMIT state
+#------------
+class TickBarAgentEmitState:
+    def execute(self, agent, event):
+        price = event.value
+        agent.open = price
+        agent.high = price
+        agent.low = price
+        agent.close = price
+        agent.buffer.append(price)
+        newState = agent.calcState
+        #print('%s %s -> %s' % (agent.name, agent.currentState, newState))
+        agent.changeState(newState)

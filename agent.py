@@ -51,15 +51,14 @@ class Agent(object):
         self.recipientsList   = recipientsList   if recipientsList != None else []
         self.states           = states           if states != None else []
         self.currentState     = currentState     if currentState != None else []
-        self.fsm = FSM()
 
     # Process currentState
     def execute(self, event):
-        curentState.execute(self, event)
+        self.currentState.execute(self, event)
 
     # Move to next state (called by currentState)
     def changeState(self, newState):
-        currentState = newState
+        self.currentState = newState
 
 #----------------------------------------------
 # An aggregate agent is a collection of agents
