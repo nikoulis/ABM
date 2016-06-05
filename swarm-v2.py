@@ -15,6 +15,7 @@ from pprint import pprint
 from agent import *
 from event import *
 from tickbar import *
+from readybar import *
 from simple import *
 
 def sendOrder(agent, event, orderPrice, orderQuantity, orderType, orderId):
@@ -58,7 +59,10 @@ def liftQuotes(quotesList, quantity, maxDepth):
         result[0][1] -= excess
     return result
 
-def execute(algo, order, event):
+#========================================
+# Execute an order based on an algorithm
+#========================================
+def executeOrder(algo, order, event):
     if isinstance(algo, Sim):
         trade = Trade(security = event.security,
                       timestamp=event.timestamp,
@@ -93,29 +97,37 @@ def execute(algo, order, event):
                           algoInstance=algo)
         return (trades, order)
 
+#=============================
+# Return True if algoInstance
+#=============================
 def algoCategorize(algoInstance, algoCategory):
     if algoCategory == 'ALL':
         return True
     else:
         return algoInstance == algoCategory
 
+#=========================
+# Order management system
+#=========================
 def oms(agent, event, algoCategory):
     categoryOrders = [o for o in agent.orders if algoCategorize(o.algoInstance, algoCategory)]
     nonCategoryOrders = [o for o in agent.orders if not algoCategorize(o.algoInstance, algoCategory)]
     newCategoryOrders = []
     for order in categoryOrders:
         if order.security == event.security:
-            (executions, remainingOrder) = execute(order.algoInstance, order, event)
+            (executions, remainingOrder) = executeOrder(order.algoInstance, order, event)
             agent.trades.append(executions)
             agent.tradestats.append(computeStats(agent.trades))
+            #print('numTrades=', len(agent.trades))
             pprint(agent.tradestats[-1].__dict__)
             if remainingOrder != None:
                 newCategoryOrders.append(remainingOrder)
+    # Replace agent.orders with non-category orders + remaining orders
     agent.orders = nonCategoryOrders + newCategoryOrders
 
 class Algo(object):
     def __init__(self, algoType):
-        self.algoType = algoType   # 'Passive' or 'Aggresive'
+        self.algoType = algoType   # 'PASSIVE' or 'AGGRESSIVE'
 
 class Sim(Algo):
     def __init__(self, algoType, slippageFunction):
@@ -130,7 +142,7 @@ class Aggressor(Algo):
 class Trade(object):
     def __init__(self, security, timestamp, price, quantity):
         self.security = security
-        self.timestamp = timestamp
+        self.timestamp = timestamp   # Format: dd-hh:mm:ss
         self.price = price
         self.quantity = quantity
 
@@ -146,18 +158,15 @@ def consume(agent, event):
 # Determine if agent observes event
 #-----------------------------------
 def observe(agent, event):
-    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
-        # 1. TickBarAgent agent, MarketUpdate event
-        #-------------------------------------------
-        return (agent.mkt == event.security) and (not isinstance(event, Bar))
-    elif isinstance(agent, SimpleModelAgent) and isinstance(event, list):
-        # 2. SimpleModelAgent agent, TickBar event
-        #-------------------------------------
-        return (agent.mkt == event[-1].security)
-    elif isinstance(agent, SimpleModelAgent) and isinstance(event, Comm):
-        # 3. SimpleModelAgent agent, Comm event
-        #----------------------------------
-        return (agent in event.recipients) and (agent != event.originator)
+    if type(agent) == TickBarAgent and type(event) == MarketUpdate:
+        return agent.mkt == event.security and type(event) != Bar
+    elif type(agent) == SimpleModelAgentComm or type(agent) == ReadyBarAgent:
+        if type(event) == list:
+            return (agent.mkt == event[-1].security)
+        elif type(event) == Comm:
+            return (agent in event.recipients) and (agent != event.originator)
+        else:
+            return False
     else:
         return False
 
@@ -165,83 +174,63 @@ def observe(agent, event):
 # Update before main event processing
 #-------------------------------------
 def preprocess(agent, event):
-    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
-        # 1. TickBarAgent agent, MarketUpdate event
-        #-------------------------------------------
+    if type(agent) == TickBarAgent and type(event) == MarketUpdate:
         agent.timestamps.append(event.timestamp)
-        agent.revalPrices.append(price(event))
-        #print("preprocess completed for agent %s and MktUpdate event %s" % (agent.name, event.timestamp))
+        agent.prices.append(price(event))
         agent.counter = len(agent.buffer)
-    if isinstance(agent, SimpleModelAgent) and isinstance(event, list):
-        # 2. SimpleModelAgent agent, TickBar event
-        #-------------------------------------
+    elif type(agent) == ReadyBarAgent:
         agent.timestamps.append(event[-1].timestamp)
-        agent.revalPrices.append(price(event[-1]))
-        oms(agent, event[-1], 'ALL')
-        #print("preprocess completed for agent %s and list event %s" % (agent.name, event[-1].timestamp))
-        agent.counter = len(agent.revalPrices)
-        startIndex = max(0, agent.counter - agent.L)
-        sublist = agent.revalPrices[startIndex:agent.counter]
-        arr = np.array(sublist)[:,3]
-        agent.mas.append(sum(arr) / len(arr))
-    elif isinstance(agent, SimpleModelAgent) and isinstance(event, Comm):
-        # 3. SimpleModelAgent agent, Comm event
-        #-----------------------------------
-        agent.incomingMessages.append(event)
-        #print("preprocess completed for agent %s and Comm event %s" % (agent.name, event))
-        if event.value == 'INIT':
-            agent.unblockShort = 0
-            agent.unblockLong = 0
-        elif event.value == 'LONG':
-            agent.unblockShort = -1
-            agent.unblockLong = 0
-        elif event.value == 'SHORT':
-            agent.unblockShort = 0
-            agent.unblockLong = 1
+        agent.prices.append(event[-1].close)
+    elif type(agent) == SimpleModelAgentComm:
+        if type(event) == list:
+            agent.timestamps.append(event[-1].timestamp)
+            agent.prices.append(price(event[-1]))
+            oms(agent, event[-1], 'ALL')
+            agent.counter = len(agent.prices)
+            startIndex = max(0, agent.counter - agent.L)
+            sublist = agent.prices[startIndex:agent.counter]
+            arr = np.array(sublist)[:,3]
+            agent.mas.append(sum(arr) / len(arr))
+        elif type(event) == Comm:
+            agent.incomingMessages.append(event)
+            if event.value == 'INIT':
+                agent.unblockShort = 0
+                agent.unblockLong = 0
+            elif event.value == 'LONG':
+                agent.unblockShort = -1
+                agent.unblockLong = 0
+            elif event.value == 'SHORT':
+                agent.unblockShort = 0
+                agent.unblockLong = 1
 
 #-----------------
 # Main processing
 #-----------------
 def update(agent, event):
-    if isinstance(agent, TickBarAgent) and isinstance(event, MarketUpdate):
-        # 1. TickBarAgent agent, MarketUpdate event
-        #-------------------------------------------
-        #operateFSM(agent.fsm, event)
-        #agent.states.append(agent.fsm.currentState)
-        agent.execute(event)
-        agent.states.append(agent.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
-    elif isinstance(agent, SimpleModelAgent) and isinstance(event, list):
-        # 2. SimpleModelAgent agent, TickBar event
-        #-------------------------------------
-        #operateFSM(agent.fsm, event)
-        #agent.states.append(agent.fsm.currentState)
-        agent.execute(event)
-        agent.states.append(agent.currentState)
-        #print("Completed work for %s and new state %s added" % (agent.name, agent.currentState))
-        checkAndPlaceTrade(agent, event)
+    agent.execute(event)
+    agent.states.append(agent.currentState)        
+    if type(agent) == SimpleModelAgentComm:
+        checkAndPlaceOrder(agent, event)
 
-#-----------------------------------
-# Check if we need to place a trade
-#-----------------------------------
-def checkAndPlaceTrade(agent, event):
-    eventLength = len(event)
+#------------------------------------
+# Check if we need to place an order
+#------------------------------------
+def checkAndPlaceOrder(agent, event):
+    pricesLength = len(agent.prices)
     lastPos = agent.positions[-1]
-    if eventLength < 2:
-        prevPos = 0
-        quantity = 0
-    else:
-        prevPos = agent.positions[-2]
-        quantity = lastPos - prevPos
-    if len(agent.revalPrices) == 0:
+    if pricesLength == 0:
         lastPrice = 0
     else:
-        lastPrice = agent.revalPrices[-1][3]
-    if eventLength < 2:
+        lastPrice = agent.prices[-1][3]
+    if pricesLength < 2:
+        prevPos = 0
+        quantity = 0
         prevPrice = 0
         pl = 0
     else:
-        prevPrice = agent.revalPrices[-2][3]
+        prevPos = agent.positions[-2]
+        quantity = lastPos - prevPos
+        prevPrice = agent.prices[-2][3]
         pl = prevPos * (lastPrice - prevPrice)
 
     # Always append to P&L list at every tick
@@ -255,22 +244,22 @@ def checkAndPlaceTrade(agent, event):
         agent.tradePls.append(pl)
         cumTradePl = sum(agent.tradePls)
         agent.cumTradePls.append(cumTradePl)
-
+        
     # Send a trade if position has changed
     if quantity != 0:
         sendOrder(agent, event[-1],
                   orderPrice=price(event[-1].value[3]),
                   orderQuantity=quantity,
-                  orderType='STP',
-                  orderId='POSCHG')
-        print("Generated aggressive order for agent %s for quantity %s" % (agent.name, quantity))
-        print("SimpleModelAgent Event %s %s consumed for agent %s" % (event[-1].timestamp, price(event)[-1].value, agent.name))
+                  orderType='LMT',
+                  orderId='')
+        print("%s: %s Trade %2d at %s" % (agent.name, event[-1].timestamp, quantity, price(event)[-1].value))
+        #print("SimpleModelAgent Event %s %s consumed for agent %s" % (event[-1].timestamp, price(event)[-1].value, agent.name))
     if len(agent.cumTradePls) > 0:
         cumtradepl = agent.cumTradePls[-1]
     else:
         cumtradepl = 0
-    print("%s: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" %
-          (agent.name, agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
+    #print("%s: Counter=%s, ma=%s, state=%s, position=%s, cumpl=%s, cumtradepl=%s" %
+    #      (agent.name, agent.counter, agent.mas[-1], agent.states[-1], agent.positions[-1], agent.cumPls[-1], cumtradepl))
 
 #------------------------------------
 # Rolling trade NAV fitness function
@@ -284,23 +273,30 @@ def RTNAV(agent, L, alpha, lamda):
 def ts2sec(ts):
     return 3600 * float(ts[0:2]) + 60 * float(ts[3:5]) + float(ts[6:8])
 
+#------------------
+# Trade statistics
+#------------------
 class TradeStats:
+    numTrades = 0
     percentProfitable = 0
     winToLoss = 0
-    avgLogRet = 0
-    totPl = 0
+    avgRet = 0
     avgDuration = 0
+    totPl = 0
     posPl = 0
     negPl = 0
     profitFactor = 0
 
+#---------------------
+# Compute trade stats
+#---------------------
 def computeStats(trades):
     stats = TradeStats()
     # Crate trade pairs list (may contain dummy trades to correctly book P&L)
     tradeGroups = []
     tradeGroup = []
     oldPos = 0
-    numTrades = len(trades)
+    stats.numTrades = len(trades)
     i = 0
     for trade in trades:
         newPos = oldPos + trade.quantity
@@ -331,7 +327,7 @@ def computeStats(trades):
             # E.g. trade1=+1, trade2=+3, trade3=+5, trade4=-4, trade5=-2 are all added to tradeGroup
             tradeGroup.append(trade)
 
-        if i == numTrades - 1:
+        if i == stats.numTrades - 1:
             # Close position at the end of the loop
             dummyTrade2 = Trade(security = trade.security,
                                  timestamp=trade.timestamp,
@@ -357,11 +353,11 @@ def computeStats(trades):
         avgSellTime = sum([ts2sec(trade.timestamp) for trade in sellTrades]) / numSellTrades
         tradeLength = abs(avgBuyTime - avgSellTime)
         if avgBuyPrice == 0:
-            tradeLogRet = 1
+            tradeRet = 0
         else:
-            tradeLogRet = avgSellPrice / avgBuyPrice
+            tradeRet = avgSellPrice / avgBuyPrice - 1
         tradePl = sum([-trade.quantity * trade.price[3] for trade in tradeGroup])
-        tradeStats.append([tradeLength, tradeLogRet, tradePl])
+        tradeStats.append([tradeLength, tradeRet, tradePl])
 
     stats.percentProfitable = sum([1.0 if t[2] >= 0 else 0.0 for t in tradeStats]) / numTradeGroups
     stats.posPl = sum([t[2] if t[2] >= 0 else 0 for t in tradeStats])
@@ -370,7 +366,7 @@ def computeStats(trades):
         stats.winToLoss = 100
     else:
         stats.winToLoss = stats.posPl / (-stats.negPl)
-    stats.avgLogRet = sum([t[1] for t in tradeStats]) / numTradeGroups
+    stats.avgRet = sum([t[1] for t in tradeStats]) / numTradeGroups
     stats.totPl = sum([t[2] for t in tradeStats])
     stats.avgDuration = sum([t[0] for t in tradeStats]) / numTradeGroups
     if stats.posPl + stats.negPl == 0:
@@ -415,32 +411,66 @@ def getEvents(security):
         events.insert(0, event)
     return events
 
-def getNextMarketUpdateEvent(security):
-    socket.setsockopt(zmq.SUBSCRIBE, security)
-    try:
-        string = socket.recv(zmq.NOBLOCK)
-    except zmq.ZMQError as e:
-        # Try again after 1 sec; if still no answer, exit
-        time.sleep(1)
+#====================================================
+# Read next market update event (either tick or bar)
+#====================================================
+def getNextMarketUpdateEvent(security, dataSource, socket, fileHandle):    
+    if dataSource == 'NXCORE':
+        
+        socket.setsockopt(zmq.SUBSCRIBE, security)
         try:
             string = socket.recv(zmq.NOBLOCK)
         except zmq.ZMQError as e:
-            return None
-    data = string.split()
-    symbol = data[0]
-    timestamp = data[1]
-    tradePrice = float(data[2])
-    tradeNetChange = float(data[3])
-    tradeSize = float(data[4])
-    #print("%s %s %f %f %d" %(symbol, timestamp, tradePrice, tradeNetChange, tradeSize))
-    event = MarketUpdate(symbol, timestamp, tradePrice)
+            # Try again after 1 sec; if still no answer, exit
+            time.sleep(1)
+            try:
+                string = socket.recv(zmq.NOBLOCK)
+            except zmq.ZMQError as e:
+                return None
+        data = string.split()
+        symbol = data[0]
+        # Use the day from the date (20130826)
+        timestamp = '26-' + data[1]
+        tradePrice = float(data[2])
+        tradeNetChange = float(data[3])
+        tradeSize = float(data[4])
+        #print("%s %s %f %f %d" %(symbol, timestamp, tradePrice, tradeNetChange, tradeSize))
+        event = MarketUpdate(symbol, timestamp, tradePrice)
+
+    elif dataSource == 'REALTICK_HIST':
+        
+        line = next(fileHandle, '').strip()
+        if line != 'DONE.' and line != '':
+            data = line.split(',')
+            # Use the day from the date
+            symbol = data[0]
+            timestamp = data[2] + ':00'
+            tradePrice = float(data[3])
+            event = MarketUpdate(symbol, timestamp, tradePrice)
+        else:
+            event = None
+
+    elif dataSource == 'DISKTRADING':
+        
+        line = next(fileHandle, '')
+        if line[:6] == '"Date"':
+            # Skip file header line
+            line = next(fileHandle, '')
+        if line != '':
+            data = line.strip().split(',')
+            # Use the day from the date
+            timestamp = data[0][3:5] + '-' + data[1][:2] + ':' + data[1][-2:] + ':00'
+            event = [Bar('ESM4', timestamp, map(float, data[2:6]))]
+        else:
+            event = None
+        
     return event
 
 #---------------------
 # Display event queue
 #---------------------
 def displayQueue(eventQueue):
-    print('Queue (' + str(len(eventQueue)) + '): ', end='')
+    print('Queue (Len=' + str(len(eventQueue)) + '): ', end='')
     for event in eventQueue:
         if isinstance(event, MarketUpdate):
             print('M', end='')
@@ -449,7 +479,7 @@ def displayQueue(eventQueue):
         elif isinstance(event, Comm):
             print('C', end='')
         elif isinstance(event, Prc):
-            pint('P', end='')
+            print('P', end='')
         elif isinstance(event, Bar) or isinstance(event, TickBar):
             print(event.open, end='')
         elif isinstance(event, Book):
@@ -459,14 +489,16 @@ def displayQueue(eventQueue):
 #-----------------------
 # Run a swarm of agents
 #-----------------------
-def runSwarm(aggregateAgents, tickBarAgents, securities, swarmFF, swarmType='ADD'):
+def runSwarm(aggregateAgents, barAgents, securities, swarmFF, swarmType, dataSource, socket, fileHandle):
     while len(eventQueue) > 0:
         # Consume current market update events
         while len(eventQueue) > 0:
             event = eventQueue.pop()
-            # TickBar agents consume MarketUpdate events and produce TickBar and Comm events
-            for tickBarAgent in tickBarAgents:
-                consume(tickBarAgent, event)
+            # A BarAgent may be a TickBarAgent or a ReadyBarAgent
+            # A TickBarAgent consumes MarketUpdate events and produces TickBar and Comm events
+            # A ReadyBarAgent consumes ReadyBar events
+            for barAgent in barAgents:
+                consume(barAgent, event)
             # Aggregate agents consume TickBar and Comm events
             for aggregateAgent in aggregateAgents:
                 for agent in aggregateAgent.members:
@@ -474,7 +506,7 @@ def runSwarm(aggregateAgents, tickBarAgents, securities, swarmFF, swarmType='ADD
 
         # Get more market update events
         for security in securities:
-            event = getNextMarketUpdateEvent(security)
+            event = getNextMarketUpdateEvent(security, dataSource, socket, fileHandle)
             if event != None:
                 eventQueue.insert(0, event)
 
@@ -484,7 +516,7 @@ def runSwarm(aggregateAgents, tickBarAgents, securities, swarmFF, swarmType='ADD
 def plot(tickBarsPlot, ma, trades, candle=False):
     # Create a numpy array for more manipulation flexibility
     data = np.array(tickBarsPlot)
-    # This replaces the first column with numbers 1..size
+    # This replaces the first column with numbers 0..size-1
     data2 = np.hstack([np.arange(data[:,0].size)[:, np.newaxis], data[:,1:]])
     # Chart ticks are on the hour
     ticks = np.unique(np.trunc(data[:,0] / 10000), return_index=True)
@@ -492,8 +524,8 @@ def plot(tickBarsPlot, ma, trades, candle=False):
     # These numbers define margin from window edge
     ax = fig.add_axes([0.1, 0.2, 0.85, 0.7])
     ax.set_xticks(data2[ticks[1], 0])
-    ax.set_xticklabels(data[ticks[1], 0], rotation=90)
-
+    ax.set_xticklabels(map(int, data[ticks[1], 0]), rotation=90)
+    
     # Plot prices
     if candle:
         candlestick(ax, data2, width=0.5, colorup='g', colordown='r')
@@ -507,7 +539,10 @@ def plot(tickBarsPlot, ma, trades, candle=False):
     buys = []
     sells = []
     for trade in trades:
-        timestampFloat = float(trade.timestamp[0:2]) * 10000 + float(trade.timestamp[3:5]) * 100 + float(trade.timestamp[6:8])
+        timestampFloat = (float(trade.timestamp[0:2]) * 1000000 +
+                          float(trade.timestamp[3:5]) * 10000 +
+                          float(trade.timestamp[6:8]) * 100 +
+                          float(trade.timestamp[9:11]))
         if trade.quantity > 0:
             buys.append(timestampFloat)
         else:
@@ -520,35 +555,62 @@ def plot(tickBarsPlot, ma, trades, candle=False):
     ax.plot(ix, data[:,4][ix], 'rv')
     plt.show()
 
+def createBarAgent(dataSource, mkt, numEvents=70):
+    if dataSource == 'NXCORE':
+        barAgent = TickBarAgent(mkt, numEvents)
+    elif dataSource == 'REALTICK_HIST':
+        barAgent = TickBarAgent(mkt, numEvents)
+    elif dataSource == 'DISKTRADING':
+        barAgent = ReadyBarAgent(mkt)
+    return barAgent
+        
+#======
+# Main
+#======
 if __name__ == '__main__':
 
-    # Data transmitted from C:\NxCore\Examples\NxCoreLanguages\C++\SampleApp4
-    context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-    socket.connect("tcp://localhost:5556")
+    dataSource = 'REALTICK_HIST'
 
-    securities = ['fES.U13', 'f6E.U13']
+    if dataSource == 'NXCORE':
+        # Data transmitted from C:\NxCore\Examples\NxCoreLanguages\C++\SampleApp4
+        context = zmq.Context()
+        socket = context.socket(zmq.SUB)
+        socket.connect("tcp://localhost:5556")
+        fileHandle = None
+        securities = ['fES.U13', 'f6E.U13']
+        
+    elif dataSource == 'REALTICK_HIST':
+        # Data from RealTick historical file (Tick bars)
+        fileName = 'C:/Users/nikoulis/Documents/proj/Stocks/Fund/Jindo/TicksTimeAndSales/TicksTimeAndSales/bin/Debug/ticks-msft.csv'
+        fileHandle = open(fileName)
+        socket = None
+        securities = ['MSFT']
 
-    # There are as many tickBarAgents as number of securities
-    tickBarAgents = []
+    elif dataSource == 'DISKTRADING':
+        # Data from DiskTrading (1-min bars)
+        fileName = 'C:/Users/nikoulis/Documents/proj/Stocks/Data/DiskTrading/1min/ESM4-sample.csv'
+        fileHandle = open(fileName)
+        socket = None
+        securities = ['ESM4']
+
+    # There are as many barAgents as number of securities
+    barAgents = []
 
     # There are as many swarmAgents as number of securities;
     # each swarmAgent contains agents for each MA scenario in Llist
     swarmAgents = []
 
-    # For each security, create a moving average simple model swarm agent using 70-tick bars
+    # For each security, create a moving average simple model swarm agent
     print("Creating set of swarm agents (one swarm agent per security) ...")
-    Llist = range(100, 400, 100)
+    Llist = range(100, 200, 100)
     for security in securities:
-        tickBarAgent = TickBarAgent(mkt=security, numEvents=70)
-        #tickBarAgent.setFSM()
-        tickBarAgents.append(tickBarAgent)
+        barAgent = createBarAgent(dataSource, mkt=security, numEvents=100)
+        barAgents.append(barAgent)
         swarmAgent = AggregateAgent(name='SwarmAgent')
         for L in Llist:
             agent = SimpleModelAgentComm(L=L, mkt=security)
-            #agent.setFSM()
             swarmAgent.members.append(agent)
-            tickBarAgent.recipientsList.append(agent)
+            barAgent.recipientsList.append(agent)
         swarmAgents.append(swarmAgent)
 
     OPTIMIZE = False
@@ -567,21 +629,20 @@ if __name__ == '__main__':
     print("Running...")
     # Get first MarketUpdate events and add them to event queue (to kickstart the event loop)
     for security in securities:
-        event = getNextMarketUpdateEvent(security)
+        event = getNextMarketUpdateEvent(security, dataSource, socket, fileHandle)
         if event != None:
             eventQueue.insert(0, event)
-    runSwarm(swarmAgents, tickBarAgents, securities, RTNAV, 'ADD')
+    runSwarm(swarmAgents, barAgents, securities, RTNAV, 'ADD', dataSource, socket, fileHandle)
     for swarmAgent in swarmAgents:
         for j in range(len(Llist)):
             if len(swarmAgent.members[j].tradestats) > 0:
                 pprint(swarmAgent.members[j].tradestats[-1].__dict__)
 
     print("Plotting...")
-    pdb.set_trace()
-    for i, tickBarAgent in enumerate(tickBarAgents):
+    for i, barAgent in enumerate(barAgents):
         for j in range(len(Llist)):
             if swarmAgents[i].members[j] is not None:
-                plot(tickBarAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
+                plot(barAgent.tickBarsPlot, swarmAgents[i].members[j].mas, swarmAgents[i].members[j].trades)
 
     elapsed_time = time.time() - start_time
     print("Elapsed time = %.1f sec." % elapsed_time)

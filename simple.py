@@ -33,7 +33,7 @@ class SimpleModelAgentComm(SimpleModelAgent):
         self.mkt = mkt
         self.unblockLong = unblockLong
         self.unblockShort = unblockShort
-    
+
 #------------
 # INIT state
 #------------

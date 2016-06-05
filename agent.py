@@ -6,17 +6,17 @@ class FSM(object):
         self.currentState = currentState
         self.transitions = transitions if transitions != None else []
         
-#----------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------
 # An agent has the following functionality:
-# (a) defines a trading strategy, via its current state and its transitions (via the execute function)
+# (a) defines a trading strategy, via its current state and its transitions (via the run function)
 # (b) stores trading strategy results (P&L, orders, positions etc.)
 # (c) communicates with other agents via incoming and outgoing messages
-#----------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------
 class Agent(object):
     def __init__(self,
                  name='',
                  timestamps=None,
-                 revalPrices=None,
+                 prices=None,
                  orders=None,
                  positions=None,
                  pls=None,
@@ -33,10 +33,10 @@ class Agent(object):
                  currentState=None,
                  states=None):
         # util.initFromArgs does not initialize separate []'s when Agent.__init__ is called
-        # from subclasses, so cannot use it here ...
+        # from subclasses (e.g. tickBarAgent, SimpleModelAgent etc.), so cannot use it here...
         self.name             = name             if name != None else []
         self.timestamps       = timestamps       if timestamps != None else []
-        self.revalPrices      = revalPrices      if revalPrices != None else []
+        self.prices           = prices           if prices != None else []
         self.orders           = orders           if orders != None else []
         self.positions        = positions        if positions != None else []
         self.pls              = pls              if pls != None else []

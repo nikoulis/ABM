@@ -38,23 +38,24 @@ class TickBarAgent(Agent):
 class TickBarAgentCalcState:
     def execute(self, agent, event):
         price = event.value
-        if agent.counter < agent.numEvents:
-            agent.close = price
-            agent.high = max(agent.high, price)
-            agent.low = min(agent.low, price)
-            agent.buffer.append(price)
+        agent.close = price
+        agent.high = max(agent.high, price)
+        agent.low = min(agent.low, price)
+        agent.buffer.append(price)
+        if agent.counter < agent.numEvents - 1:
             newState = agent.currentState
-        elif agent.counter == agent.numEvents:
+        elif agent.counter == agent.numEvents - 1:
             tickBar = TickBar(security=agent.mkt,
                               timestamp=agent.timestamps[-1],
                               value=[agent.open, agent.high, agent.low, agent.close],
                               numTicks=agent.numEvents)
-            print("============> TickBar: Open=%0.4f High=%0.4f Low=%0.4f Close=%0.4f"
-                  % (agent.open, agent.high, agent.low, agent.close))
+            #print("============> TickBar: Open=%0.4f High=%0.4f Low=%0.4f Close=%0.4f"
+            #      % (agent.open, agent.high, agent.low, agent.close))
             agent.tickBars.append(tickBar)
-            timestampFloat = (float(agent.timestamps[-1][0:2]) * 10000 +
-                              float(agent.timestamps[-1][3:5]) * 100 +
-                              float(agent.timestamps[-1][6:8]))
+            timestampFloat = (float(agent.timestamps[-1][0:2]) * 1000000 +
+                              float(agent.timestamps[-1][3:5]) * 10000 +
+                              float(agent.timestamps[-1][6:8]) * 100 +
+                              float(agent.timestamps[-1][9:11]))
             agent.tickBarsPlot.append([timestampFloat, agent.open, agent.high, agent.low, agent.close])
             emit(agent, agent.tickBars)
             agent.buffer = []
