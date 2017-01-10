@@ -123,23 +123,23 @@ class Transition(object):
 def price(event, slippageFunction=None, size=0, orderType=None):
     #print("----> type(event)=%s %s" % (type(event), event.value))
     if isinstance(event, MarketUpdate):
-        px = event.value
+        price = event.value
     elif isinstance(event, list) or isinstance(event, float):
-        px = event
+        price = event
     elif isinstance(event, Comm):
-        px = 0
+        price = 0
     elif isinstance(event, Prc):
-        px = event.lastPrice
+        price = event.lastPrice
     elif isinstance(event, Bar) or isinstance(event, TickBar):
-        px = event.open
+        price = event.open
     elif isinstance(event, Book):
         if size == 0:
-            px = event.mid
+            price = event.mid
         elif size > 0:
-            px = event.askBest
+            price = event.askBest
         else:
-            px = event.bidBest
-    return adjustPrice(px, slippageFunction, event, size, orderType)
+            price = event.bidBest
+    return adjustPrice(price, slippageFunction, event, size, orderType)
 
 def slippage(event, size, orderType):
     return 0
@@ -151,11 +151,11 @@ def adjustPrice(price, slippageFunction, event, size, orderType):
 
 def emit(agent, emission):
     if isinstance(emission, basestring):
-        # If emission is INIT, LONG or SHORT, create a Comm event
         event = Comm(agent, agent.recipientsList, agent.timestamps[-1], emission)
     else:
         event = emission
     # Append event to the queue; this then gets popped by the main loop
     # (runSimulation or run Live) and consumed by the agents.
-    eventQueue.insert(0, event)
+    eventQueue.append(event)
     agent.outgoingMessages.append(event)
+

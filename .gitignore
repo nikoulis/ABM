@@ -2,3 +2,7 @@
 *.xls
 *.xlsx
 *.pyc
+*.csv
+*.txt
+*.pl
+*.bat

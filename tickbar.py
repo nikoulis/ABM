@@ -1,6 +1,10 @@
+from __future__ import print_function
 from agent import *
 from event import *
 import pdb
+import sys
+
+SHOW_TICKBARS = False
 
 class TickBarAgent(Agent):
     def __init__(self,
@@ -12,6 +16,7 @@ class TickBarAgent(Agent):
                  high=0,
                  low=99999,
                  close=0,
+                 volume=0,
                  tickBars=None,
                  tickBarsPlot=None):
         self.mkt = mkt
@@ -23,6 +28,7 @@ class TickBarAgent(Agent):
         self.high = high
         self.low = low
         self.close = close
+        self.volume = volume
         self.tickBars = tickBars if tickBars != None else []
         self.tickBarsPlot = tickBarsPlot if tickBarsPlot != None else []
 
@@ -37,26 +43,42 @@ class TickBarAgent(Agent):
 #------------
 class TickBarAgentCalcState:
     def execute(self, agent, event):
-        price = event.value
+        if event.value[0] == None:
+            # File is done; need to create tick bar regardless of whether we reached numTicks or not
+            price = agent.prices[-2][0]
+            volume = 0
+        else:
+            price = event.value[0]
+            volume = event.value[1]
+            agent.buffer.append(price)
+
+        agent.volume += volume
         agent.close = price
         agent.high = max(agent.high, price)
         agent.low = min(agent.low, price)
-        agent.buffer.append(price)
-        if agent.counter < agent.numEvents - 1:
+        
+        if agent.counter < agent.numEvents - 1 and event.value[0] != None:
             newState = agent.currentState
-        elif agent.counter == agent.numEvents - 1:
+        elif agent.counter == agent.numEvents - 1 or event.value[0] == None:
             tickBar = TickBar(security=agent.mkt,
-                              timestamp=agent.timestamps[-1],
-                              value=[agent.open, agent.high, agent.low, agent.close],
+                              timestamp=agent.timestamps[-agent.counter - 1],
+                              value=[agent.open, agent.high, agent.low, agent.close, agent.volume],
                               numTicks=agent.numEvents)
-            #print("============> TickBar: Open=%0.4f High=%0.4f Low=%0.4f Close=%0.4f"
-            #      % (agent.open, agent.high, agent.low, agent.close))
+            if SHOW_TICKBARS:
+                print('============> %s %d-Tick Bar (%s): Open=%.2f, High=%.2f, Low=%.2f, Close=%.2f, Volume=%d'
+                      % (agent.mkt, agent.numEvents, agent.timestamps[-agent.counter - 1],
+                         agent.open, agent.high, agent.low, agent.close, agent.volume), file=sys.stderr)
             agent.tickBars.append(tickBar)
-            timestampFloat = (float(agent.timestamps[-1][0:2]) * 1000000 +
-                              float(agent.timestamps[-1][3:5]) * 10000 +
-                              float(agent.timestamps[-1][6:8]) * 100 +
-                              float(agent.timestamps[-1][9:11]))
-            agent.tickBarsPlot.append([timestampFloat, agent.open, agent.high, agent.low, agent.close])
+            timestampFloat = (float(agent.timestamps[-agent.counter - 1][0:8]) * 1000000 +
+                              float(agent.timestamps[-agent.counter - 1][9:11]) * 10000 +
+                              float(agent.timestamps[-agent.counter - 1][12:14]) * 100 +
+                              float(agent.timestamps[-agent.counter - 1][15:17]))
+            agent.tickBarsPlot.append([timestampFloat,
+                                       agent.open,
+                                       agent.high,
+                                       agent.low,
+                                       agent.close,
+                                       agent.volume])
             emit(agent, agent.tickBars)
             agent.buffer = []
             newState = agent.emitState
@@ -68,12 +90,15 @@ class TickBarAgentCalcState:
 #------------
 class TickBarAgentEmitState:
     def execute(self, agent, event):
-        price = event.value
+        agent.counter = 0
+        price = event.value[0]
+        agent.volume = event.value[1]
         agent.open = price
         agent.high = price
         agent.low = price
         agent.close = price
-        agent.buffer.append(price)
+        if price != None:
+            agent.buffer.append(price)
         newState = agent.calcState
         #print('%s %s -> %s' % (agent.name, agent.currentState, newState))
         agent.changeState(newState)
